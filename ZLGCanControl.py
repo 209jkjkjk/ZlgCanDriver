@@ -1,5 +1,5 @@
 import ctypes
-from  ctypes import *
+from ctypes import *
 import time
 import traceback
 from DecodeCanFrame import iDecodeCanFrame
@@ -228,7 +228,7 @@ class CanConfigGroup1:
     def __init__(self):
         self.BaudRate = 0
         self.CanType = 0
-        self.Chn = 0
+        self.Chn = []
         self.CanIndex = 0
         self.init_config = VCI_INIT_CONFIG()
 
@@ -237,7 +237,7 @@ class CanConfigGroup2:
     def __init__(self):
         self.BaudRate = 0
         self.CanType = 0
-        self.Chn = 0
+        self.Chn = []
         self.CanIndex = 0
         self.init_config = VCI_INIT_CONFIG()
 
@@ -248,11 +248,11 @@ class Communication():
     CanInfor = VCI_CAN_OBJ()
     ReceiveBuffer = (VCI_CAN_OBJ*1000)()
 
-    def __init__(self, can_type=23, chn=0, ind=0):
+    def __init__(self, can_type=23, chn=None, ind=0):
         super().__init__()
         self.BaudRate = 0x60007
         self.CanType = can_type
-        self.Chn = chn
+        self.Chn = chn          # type:list[int]
         self.CanIndex = ind
         self.config1 = CanConfigGroup1()
         self.config2 = CanConfigGroup2()
@@ -291,9 +291,11 @@ class Communication():
         else:
             return False, 0, "InputType is not satisfied! At GetCANBoardConfigurtaion Function"
 
-    def set_can_board_configuration(self, can_type: str, can_idx: int, chn: int, baud_rate: int):
+    def set_can_board_configuration(self, can_type: str, can_idx: int, chn, baud_rate: int):
         try:
-            if type(can_type) != str or type(chn) != int or type(baud_rate) != int:
+            if type(chn) == int:
+                chn = [chn]
+            if type(can_type) != str or type(chn) != list or type(baud_rate) != int:
                 return False, self._error_msg(" InputType is not satisfied! At GetCANBoardConfigurtaion Function")
 
             # if can type like usb_can_2eu
@@ -338,10 +340,10 @@ class Communication():
                 stat, self.config2.CanType, msg = self._trans_can_type(can_type)
                 self.config2.CanIndex = can_idx
 
-                if chn <= 4:
+                if len(chn) <= 4:
                     self.config2.Chn = chn
                 else:
-                    raise Exception("Can 通道设置大于4")
+                    raise Exception("Can 通道数量大于4")
                 self.config2.init_config.AccCode = 0x00000000
                 self.config2.init_config.AccMask = 0xffffffff
                 self.config2.init_config.Filter = 1
@@ -423,23 +425,23 @@ class Communication():
                                         byref(c_int(self.config1.BaudRate))) == 0:
                     dll.VCI_CloseDevice(self.config1.CanType, 0)
                     raise Exception("配置波特率失败")
-
-                if dll.VCI_InitCAN(self.config1.CanType, self.config1.CanIndex, self.config1.Chn,
-                                   pointer(self.config1.init_config)) == 0:
-                    raise Exception("初始化失败")
-
-                if dll.VCI_StartCAN(self.config1.CanType,self.config1.CanIndex,self.config1.Chn)==0:
-                    raise Exception("打开CAN卡失败")
+                for c in self.config1.Chn:
+                    if dll.VCI_InitCAN(self.config1.CanType, self.config1.CanIndex, c,
+                                       pointer(self.config1.init_config)) == 0:
+                        raise Exception("初始化失败")
+                    if dll.VCI_StartCAN(self.config1.CanType, self.config1.CanIndex, c) == 0:
+                        raise Exception("打开CAN卡失败")
 
             elif self.config2.CanType != 0:
                 if dll.VCI_OpenDevice(self.config2.CanType, self.config2.CanIndex, 0) == 0:
                     raise Exception("打开CAN卡失败，请检查设备索引和设备类型是否准确")
 
-                if dll.VCI_InitCAN(self.config2.CanType,self.config2.CanIndex, self.config2.Chn, pointer(self.config2.init_config))== 0:
-                    raise Exception("初始化CAN卡失败")
-
-                if dll.VCI_StartCAN(self.config2.CanType,self.config2.CanIndex, self.config2.Chn)==0:
-                    raise Exception("打开CAN卡失败")
+                for c in self.config2.Chn:
+                    if dll.VCI_InitCAN(self.config2.CanType, self.config2.CanIndex, c,          # 这里的通道号似乎无所谓？
+                                       pointer(self.config2.init_config)) == 0:
+                        raise Exception("初始化CAN卡失败")
+                    if dll.VCI_StartCAN(self.config2.CanType, self.config2.CanIndex, c) == 0:   # 只要在这里保证每个通道都打开就行
+                        raise Exception("打开CAN卡失败")
 
         except Exception as e:
             raise e
@@ -526,7 +528,7 @@ class Communication():
 
     def Close(self):
         dll.VCI_CloseDevice(self.CanType,0)
-    def Transmit(self, ID, data,remote_flag=False,extern_flag = False,data_len = 8): #最基本的发送函数
+    def Transmit(self, ID, data,remote_flag=False,extern_flag = False,data_len = 8, Chn=None): #最基本的发送函数
         a = VCI_CAN_OBJ_SEND()
         a.ID = ID
         a.DataLen = data_len
@@ -544,7 +546,7 @@ class Communication():
         if self.config1.CanType != 0:
             res = dll.VCI_Transmit(self.CanType, self.config1.CanIndex, self.config1.Chn, pointer(a), 1)
         elif self.config2.CanType != 0:
-            res = dll.VCI_Transmit(self.CanType, self.config2.CanIndex, self.config2.Chn, pointer(a), 1)
+            res = dll.VCI_Transmit(self.CanType, self.config2.CanIndex, self.config2.Chn[0] if Chn is None else Chn, pointer(a), 1)
         if res !=1:
             print("发送失败！")
     def TranExtentedSession(self): # 切换到扩展模式
