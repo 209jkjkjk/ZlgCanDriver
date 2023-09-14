@@ -435,7 +435,7 @@ class Communication():
                 if dll.VCI_OpenDevice(self.config2.CanType, self.config2.CanIndex, 0) == 0:
                     raise Exception("打开CAN卡失败，请检查设备索引和设备类型是否准确")
 
-                if dll.VCI_InitCAN(self.config2.CanType,self.config2.CanIndex,0, pointer(self.config2.init_config))== 0:
+                if dll.VCI_InitCAN(self.config2.CanType,self.config2.CanIndex, self.config2.Chn, pointer(self.config2.init_config))== 0:
                     raise Exception("初始化CAN卡失败")
 
                 if dll.VCI_StartCAN(self.config2.CanType,self.config2.CanIndex, self.config2.Chn)==0:
